@@ -4,10 +4,10 @@ import (
 	"fmt"
 )
 
-type errorCode int
+type ErrCode int
 
 const (
-	ErrCodePlaceAlreadyRegistered errorCode = iota + 1
+	ErrCodePlaceAlreadyRegistered ErrCode = iota + 1
 	ErrCodeTransitionAlreadyRegistered
 	ErrCodePlaceIsNotRegistered
 	ErrCodeUnexpectedAvailableTransitionsNumber
@@ -15,28 +15,51 @@ const (
 	ErrCodeNetInErrState
 	ErrCodeBeforePlaceReturnedErr
 	ErrCodeBeforeTransitReturnedErr
+	ErrCodeCantSetErrState
+	ErrCodeFinished
+	ErrCodeFromTransitionAlreadyRegistered
+	ErrCodeToTransitionAlreadyRegistered
+	ErrCodeConsumerNotSet
+	ErrCodePoolAlreadyInit
+	ErrCodeWaitingForNetFromPoolTooLong
 )
 
+// Error is err model of component.
 type Error struct {
-	Code    errorCode `json:"code"`
-	Message string    `json:"message"`
+	Code    ErrCode `json:"code"`
+	Message string  `json:"message"`
 }
 
-func NewError(errorCode errorCode, msg string) *Error {
+// NewError init error.
+func NewError(errorCode ErrCode, msg string) *Error {
 	return &Error{
 		Code:    errorCode,
 		Message: msg,
 	}
 }
 
-func NewErrorf(errorCode errorCode, format string, args ...interface{}) *Error {
+// NewErrorf init error by format.
+func NewErrorf(errorCode ErrCode, format string, args ...interface{}) *Error {
 	return NewError(errorCode, fmt.Sprintf(format, args...))
 }
 
-func (e *Error) Is(errorCode errorCode) bool {
+// Is check error.
+func (e *Error) Is(errorCode ErrCode) bool {
 	return e.Code == errorCode
 }
 
 func (e *Error) Error() string {
 	return e.Message
+}
+
+// Is compare err and error code. If err is not nil, is *Error type and have the same code or false.
+func Is(err error, code ErrCode) bool {
+	if err == nil {
+		return false
+	}
+	error, ok := err.(*Error)
+	if !ok {
+		return false
+	}
+	return error.Code == code
 }

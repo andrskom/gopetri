@@ -6,11 +6,15 @@ import (
 	"github.com/andrskom/gopetri"
 )
 
-type LogConsumer struct {
-	comp *gopetri.Component
+type NetLogStateGetter interface {
+	GetState() gopetri.State
 }
 
-func (l *LogConsumer) SetComp(comp *gopetri.Component) {
+type LogConsumer struct {
+	comp NetLogStateGetter
+}
+
+func (l *LogConsumer) SetComp(comp NetLogStateGetter) {
 	l.comp = comp
 }
 

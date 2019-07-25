@@ -1,20 +1,20 @@
 package gopetri
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/awalterschulze/gographviz"
 )
 
-// Component of petri net.
-type Component struct {
+// Net of petri net.
+type Net struct {
 	start              *Place
 	placeRegistry      map[string]*Place
 	transitionRegistry map[string]*Transition
 	state              State
 	consumer           Consumer
 	errState           *Error
+	finished           bool
 }
 
 // State is current state of net, contains places for chips in places and transitions.
@@ -24,23 +24,22 @@ type State struct {
 }
 
 // New net instance with consumer.
-func New(consumer Consumer) *Component {
-	return &Component{
+func New() *Net {
+	return &Net{
 		placeRegistry:      make(map[string]*Place),
 		transitionRegistry: make(map[string]*Transition),
-		consumer:           consumer,
 	}
 }
 
 // GetState return current state of net.
-func (c *Component) GetState() State {
+func (c *Net) GetState() State {
 	return c.state
 }
 
 // StartPlace start net.
 //
 // !!! Not supported V of nodes and more than one chip.
-func (c *Component) StartPlace( /*chipNumber int*/ ) error {
+func (c *Net) StartPlace( /*chipNumber int*/ ) error {
 	chipNumber := 1
 	c.state = State{
 		PlaceChips:      make(map[string]int),
@@ -48,7 +47,7 @@ func (c *Component) StartPlace( /*chipNumber int*/ ) error {
 	}
 	for chipNumber > 0 {
 		chipNumber--
-		if _, err := c.SetPlace(c.start.ID); err != nil {
+		if err := c.SetPlace(c.start.ID); err != nil {
 			return err
 		}
 	}
@@ -56,33 +55,53 @@ func (c *Component) StartPlace( /*chipNumber int*/ ) error {
 }
 
 // UpFromState set current state for work.
-func (c *Component) UpFromState(state State) {
+func (c *Net) UpFromState(state State) {
 	c.state = state
 }
 
 // IsErrState check state on error.
-func (c *Component) IsErrState() bool {
+func (c *Net) IsErrState() bool {
 	return c.errState != nil
 }
 
+// IsFinished return info about state, finished or not.
+func (c *Net) IsFinished() bool {
+	return c.finished
+}
+
 // GetErrFromState return err state reason.
-func (c *Component) GetErrFromState() *Error {
+func (c *Net) GetErrFromState() *Error {
 	return c.errState
 }
 
+// FullReset state of net for reusing.
+func (c *Net) FullReset() {
+	c.state = State{}
+	c.consumer = nil
+	c.errState = nil
+	c.finished = false
+}
+
 // SetPlace for chip. If chip in finish place, will return true as first result.
-func (c *Component) SetPlace(placeID string) (bool, error) {
-	if c.IsErrState() {
-		return true, NewError(ErrCodeNetInErrState, "Net in err state")
+func (c *Net) SetPlace(placeID string) error {
+	if c.consumer == nil {
+		return NewError(ErrCodeConsumerNotSet, "Consumer is not set")
 	}
+	if c.IsErrState() {
+		return NewError(ErrCodeNetInErrState, "Net in err state")
+	}
+	if c.IsFinished() {
+		return NewError(ErrCodeFinished, "Net is finished")
+	}
+
 	newPlace, err := c.GetPlace(placeID)
 	if err != nil {
-		return false, err
+		return err
 	}
 	// validation
 	if newPlace != c.start {
 		if c.state.TransitionChips[newPlace.FromTransition.ID] == 0 {
-			return false, NewErrorf(
+			return NewErrorf(
 				ErrCodeHasNotChipForNewPlace,
 				"has not chip in transition '%s' for place '%s'", newPlace.FromTransition.ID, newPlace.ID,
 			)
@@ -91,12 +110,12 @@ func (c *Component) SetPlace(placeID string) (bool, error) {
 
 	if err := c.setPlace(newPlace); err != nil {
 		c.errState = err
-		return true, NewError(ErrCodeNetInErrState, "Net in err state")
+		return NewError(ErrCodeNetInErrState, "Net in err state")
 	}
-	return newPlace.IsFinished, nil
+	return nil
 }
 
-func (c *Component) setPlace(newPlace *Place) *Error {
+func (c *Net) setPlace(newPlace *Place) *Error {
 	if err := c.consumer.BeforePlace(newPlace.ID); err != nil {
 		return NewError(ErrCodeBeforePlaceReturnedErr, err.Error())
 	}
@@ -110,6 +129,7 @@ func (c *Component) setPlace(newPlace *Place) *Error {
 	c.consumer.AfterPlace(newPlace.ID)
 
 	if newPlace.IsFinished {
+		c.finished = true
 		return nil
 	}
 
@@ -154,12 +174,12 @@ func (c *Component) setPlace(newPlace *Place) *Error {
 }
 
 // SetConsumer for net.
-func (c *Component) SetConsumer(l Consumer) {
+func (c *Net) SetConsumer(l Consumer) {
 	c.consumer = l
 }
 
 // AddPlace to petri net.
-func (c *Component) AddPlace(place *Place) error {
+func (c *Net) AddPlace(place *Place) error {
 	if _, ok := c.placeRegistry[place.ID]; ok {
 		return NewErrorf(ErrCodePlaceAlreadyRegistered, "place with id '%c' already registered", place.ID)
 	}
@@ -169,7 +189,7 @@ func (c *Component) AddPlace(place *Place) error {
 }
 
 // GetPlace return place by id.
-func (c *Component) GetPlace(placeID string) (*Place, error) {
+func (c *Net) GetPlace(placeID string) (*Place, error) {
 	place, ok := c.placeRegistry[placeID]
 	if !ok {
 		return nil, NewErrorf(
@@ -181,7 +201,7 @@ func (c *Component) GetPlace(placeID string) (*Place, error) {
 }
 
 // AddTransition tp petri net.
-func (c *Component) AddTransition(transition *Transition) error {
+func (c *Net) AddTransition(transition *Transition) error {
 	if _, ok := c.placeRegistry[transition.ID]; ok {
 		return NewErrorf(
 			ErrCodeTransitionAlreadyRegistered,
@@ -194,7 +214,7 @@ func (c *Component) AddTransition(transition *Transition) error {
 }
 
 // SetStartPlace by name of state.
-func (c *Component) SetStartPlace(place string) error {
+func (c *Net) SetStartPlace(place string) error {
 	start, ok := c.placeRegistry[place]
 	if !ok {
 		return NewErrorf(ErrCodePlaceIsNotRegistered, "place '%c' is not registered")
@@ -204,17 +224,22 @@ func (c *Component) SetStartPlace(place string) error {
 	return nil
 }
 
-func BuildFromJSONString(jsonBytes []byte, consumer Consumer) (*Component, error) {
-	var cfg Cfg
-	if err := json.Unmarshal(jsonBytes, &cfg); err != nil {
-		return nil, err
+// SetStartPlace by name of state.
+func (c *Net) SetErrorState(err *Error) error {
+	if c.IsErrState() {
+		return NewErrorf(ErrCodeCantSetErrState, "Already set err state")
 	}
 
-	return BuildFromCfg(cfg, consumer)
+	if c.IsFinished() {
+		return NewErrorf(ErrCodeCantSetErrState, "Net is finished")
+	}
+
+	return nil
 }
 
-func BuildFromCfg(cfg Cfg, consumer Consumer) (*Component, error) {
-	comp := New(consumer)
+// BuildFromCfg return net by Cfg.
+func BuildFromCfg(cfg Cfg) (*Net, error) {
+	comp := New()
 
 	finishRegistry := make(map[string]struct{})
 	for _, fPlace := range cfg.Finish {
@@ -223,7 +248,7 @@ func BuildFromCfg(cfg Cfg, consumer Consumer) (*Component, error) {
 
 	for _, place := range cfg.Places {
 		_, ok := finishRegistry[place]
-		if err := comp.AddPlace(&Place{ID: place, IsFinished: ok, ToTransitions: make([]*Transition, 0)}); err != nil {
+		if err := comp.AddPlace(NewPlace(place, ok)); err != nil {
 			return nil, err
 		}
 	}
@@ -267,7 +292,7 @@ func BuildFromCfg(cfg Cfg, consumer Consumer) (*Component, error) {
 // AsGraphvizDotLang return string with graphviz dot lang view of graph.
 // If u set 'withState', you will have chips on graph.
 // 'turquoise' is color for start place, 'sienna' is coor for finish places. 'red' is for chips on map.
-func (c *Component) AsGraphvizDotLang(name string, withState bool) (string, error) {
+func (c *Net) AsGraphvizDotLang(name string, withState bool) (string, error) {
 	graphAst, _ := gographviz.ParseString(fmt.Sprintf(`digraph %s {}`, name))
 	graph := gographviz.NewGraph()
 	if err := gographviz.Analyse(graphAst, graph); err != nil {

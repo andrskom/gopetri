@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/andrskom/gopetri"
 	"github.com/andrskom/gopetri/example/jsonsrc"
@@ -22,38 +23,41 @@ func main() {
 	}
 
 	consumer := &util.LogConsumer{}
-	fac := gopetri.NewFactory(cfg, consumer, 3)
-	go fac.Run()
+	pool := gopetri.NewPool(10, time.Second)
+	if err := pool.Init(cfg); err != nil {
+		log.Fatal(err.Error())
+	}
 
-	comp := fac.Get()
-	consumer.SetComp(comp)
-	if err := comp.StartPlace(); err != nil {
-		log.Fatal(err.Error())
-	}
-	finished, err := comp.SetPlace("branch2Place1")
+	net, err := pool.Get()
 	if err != nil {
 		log.Fatal(err.Error())
 	}
-	finished, err = comp.SetPlace("branch1Place1")
-	if err != nil {
+	defer net.Close()
+	consumer.SetComp(net)
+	net.SetConsumer(consumer)
+	if err := net.StartPlace(); err != nil {
 		log.Fatal(err.Error())
 	}
-	finished, err = comp.SetPlace("branch1Place2")
-	if err != nil {
+
+	if err := net.SetPlace("branch2Place1"); err != nil {
 		log.Fatal(err.Error())
 	}
-	finished, err = comp.SetPlace("branchMergePlace1")
-	if err != nil {
+	if err := net.SetPlace("branch1Place1"); err != nil {
 		log.Fatal(err.Error())
 	}
-	finished, err = comp.SetPlace("placeFinish")
-	if err != nil {
+	if err := net.SetPlace("branch1Place2"); err != nil {
 		log.Fatal(err.Error())
 	}
-	log.Println(finished)
+	if err := net.SetPlace("branchMergePlace1"); err != nil {
+		log.Fatal(err.Error())
+	}
+	if err := net.SetPlace("placeFinish"); err != nil {
+		log.Fatal(err.Error())
+	}
+	log.Println(net.IsFinished())
 
 	log.Println("-----------")
-	graphViz, err := comp.AsGraphvizDotLang("example_v1", true)
+	graphViz, err := net.AsGraphvizDotLang("example_v1", true)
 	if err != nil {
 		log.Fatal(err.Error())
 	}

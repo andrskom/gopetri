@@ -1,5 +1,6 @@
 package gopetri
 
+// Consumer is interface for external consumer.
 type Consumer interface {
 	BeforePlace(placeID string) error
 	AfterPlace(placeID string)
