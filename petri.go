@@ -13,14 +13,24 @@ type Net struct {
 	transitionRegistry map[string]*Transition
 	state              State
 	consumer           Consumer
-	errState           *Error
-	finished           bool
 }
 
 // State is current state of net, contains places for chips in places and transitions.
 type State struct {
-	PlaceChips      map[string]int
-	TransitionChips map[string]int
+	Finished        bool           `json:"finished"`
+	Err             *Error         `json:"err"`
+	PlaceChips      map[string]int `json:"place_chips"`
+	TransitionChips map[string]int `json:"transition_chips"`
+}
+
+// IsFinished state.
+func (s *State) IsFinished() bool {
+	return s.Finished
+}
+
+// IsError state.
+func (s *State) IsError() bool {
+	return s.Err != nil
 }
 
 // New net instance with consumer.
@@ -61,25 +71,23 @@ func (c *Net) UpFromState(state State) {
 
 // IsErrState check state on error.
 func (c *Net) IsErrState() bool {
-	return c.errState != nil
+	return c.GetState().IsError()
 }
 
 // IsFinished return info about state, finished or not.
 func (c *Net) IsFinished() bool {
-	return c.finished
+	return c.GetState().IsFinished()
 }
 
 // GetErrFromState return err state reason.
 func (c *Net) GetErrFromState() *Error {
-	return c.errState
+	return c.GetState().Err
 }
 
 // FullReset state of net for reusing.
 func (c *Net) FullReset() {
 	c.state = State{}
 	c.consumer = nil
-	c.errState = nil
-	c.finished = false
 }
 
 // SetPlace for chip. If chip in finish place, will return true as first result.
@@ -109,7 +117,7 @@ func (c *Net) SetPlace(placeID string) error {
 	}
 
 	if err := c.setPlace(newPlace); err != nil {
-		c.errState = err
+		c.state.Err = err
 		return NewError(ErrCodeNetInErrState, "Net in err state")
 	}
 	return nil
@@ -129,7 +137,7 @@ func (c *Net) setPlace(newPlace *Place) *Error {
 	c.consumer.AfterPlace(newPlace.ID)
 
 	if newPlace.IsFinished {
-		c.finished = true
+		c.state.Finished = true
 		return nil
 	}
 
