@@ -24,12 +24,12 @@ type State struct {
 }
 
 // IsFinished state.
-func (s *State) IsFinished() bool {
+func (s State) IsFinished() bool {
 	return s.Finished
 }
 
 // IsError state.
-func (s *State) IsError() bool {
+func (s State) IsError() bool {
 	return s.Err != nil
 }
 
