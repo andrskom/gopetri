@@ -117,7 +117,9 @@ func (c *Net) SetPlace(placeID string) error {
 	}
 
 	if err := c.setPlace(newPlace); err != nil {
-		c.state.Err = err
+		if esErr := c.SetErrorState(err); esErr != nil {
+			return esErr
+		}
 		return NewError(ErrCodeNetInErrState, "Net in err state")
 	}
 	return nil
@@ -241,6 +243,8 @@ func (c *Net) SetErrorState(err *Error) error {
 	if c.IsFinished() {
 		return NewErrorf(ErrCodeCantSetErrState, "Net is finished")
 	}
+
+	c.state.Err = err
 
 	return nil
 }
